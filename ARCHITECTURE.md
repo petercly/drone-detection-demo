@@ -37,7 +37,7 @@ The core processing unit. Each instance owns one video file, one `CentroidTracke
 
 **The `inference_enabled` flag**: Feeds start processing video immediately but skip inference until the operator clicks "Start Monitoring." This means MJPEG streams show live (unannotated) video from load — the cognitive load of "it's already running, just not detecting" is lower than "nothing works until you click start."
 
-**The `INTERCARDINAL_MAP`** encodes a physical assumption: each camera faces inward toward a protected area. "North" camera faces south (into the area), so a drone moving to screen-right is heading northeast relative to the perimeter. This is correct given the naming convention but is an unstated assumption — if any camera is rotated or doesn't face inward, the compass is wrong.
+**The `INTERCARDINAL_MAP`** encodes the physical layout: all cameras face **outward** from the protected area, providing all-round perimeter coverage. The operator at the center looks at feeds showing what's outside the perimeter in each cardinal direction. The "north" camera faces north, so screen-right corresponds to East — a drone at the right edge of the north feed is moving toward the NE gap between the N and E cameras. The mapping assumes standard (non-mirrored) camera orientation where screen-right = clockwise from the camera's facing direction.
 
 ```python
 INTERCARDINAL_MAP = {
