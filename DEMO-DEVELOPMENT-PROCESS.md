@@ -240,11 +240,12 @@ Port 5000                     Port 8000
 Inference always called       Guard: skip if no API key
 Local inference server        Roboflow hosted serverless API
 Direction via Workflow Block   Direction via client-side atan2
-No blind-spot warnings        Quadrant memory intercardinal warnings
+No blind-spot warnings        Quadrant memory + atan2 OR logic warnings
+One-way start button          Start/Stop monitoring toggle
 PROCESS_FPS=5/DISPLAY_FPS=15  PROCESS_FPS=2/DISPLAY_FPS=10
 requirements: inference        requirements: inference-sdk only
   (full ML runtime)             (lightweight HTTP client)
-ffmpeg -c copy (corrupted)    ffmpeg re-encode (normalized)
+ffmpeg -c copy (corrupted)    ffmpeg re-encode (output seeking, normalized)
 No compass minimap            SVG compass: 4 cardinal + 4 intercardinal
 ```
 
@@ -272,8 +273,10 @@ The user started with a PRD before any code existed, grounding the demo in a rea
 **2. Hardware reality checks**
 Claude's initial architecture assumed local inference was viable. The user's knowledge of the demo laptop's limitations (Intel i7-7660U, 2-core, no GPU) drove the pivot to Roboflow's hosted API (Phase 7). Similarly, pushing FPS to 3 and observing black screens (Phase 5/7) was a user-initiated stress test that validated the 2 FPS ceiling — something that couldn't be predicted from code review alone.
 
-**3. The intercardinal warning redesign (Phase 9)**
-This was the clearest example of domain intuition outperforming engineering instinct. Claude built a technically sound per-drone centroid tracker with displacement thresholds. It didn't work in practice — the tracker couldn't maintain identity long enough at 2 FPS with network latency. Rather than asking to tune thresholds or add retries, the user proposed a fundamentally different mental model: "forget tracking individual drones — just remember where detections *were* and where they *are now*." The quadrant memory approach was simpler, more robust, and directly leveraged the Workflow Block's spatial output. The user also set the design philosophy ("prefer false positives over missed warnings") which cut through engineering perfectionism.
+**3. The intercardinal warning redesign (Phases 9-10)**
+This was the clearest example of domain intuition outperforming engineering instinct, and it played out across two iterations. In Phase 9, Claude built a technically sound per-drone centroid tracker with displacement thresholds. It didn't work in practice — the tracker couldn't maintain identity long enough at 2 FPS with network latency. Rather than asking to tune thresholds or add retries, the user proposed a fundamentally different mental model: "forget tracking individual drones — just remember where detections *were* and where they *are now*." The quadrant memory approach was simpler, more robust, and directly leveraged the Workflow Block's spatial output. The user also set the design philosophy ("prefer false positives over missed warnings") which cut through engineering perfectionism.
+
+In Phase 10, the user identified another gap: the center→edge transition still missed drones entering from offscreen directly into edge quadrants. The fix combined both tracking systems (quadrant memory + atan2 direction) with OR logic — a compositional approach that emerged from understanding what each system was good at rather than trying to make one system do everything. This illustrates how iterative demo testing surfaces edge cases that pure architectural reasoning misses.
 
 **4. UX corrections from live observation**
 Several fixes came from the user watching the actual dashboard and reporting what didn't match their mental model:
@@ -281,6 +284,8 @@ Several fixes came from the user watching the actual dashboard and reporting wha
 - East/West panels in wrong position relative to compass convention — a spatial intuition that no linter would catch
 - Intercardinal warnings not firing after 30 seconds — a timeout the user was willing to wait through, confirming the feature was broken rather than just slow
 - Video corruption from mixed IR/EO codecs — identified from visual artifacts, not error logs
+- Video artifacts from input seeking (`-ss` before `-i`) in re-encode — spotted during demo playback, diagnosed as keyframe misalignment
+- No way to stop monitoring without restarting the server — a demo workflow gap (need to reset between audience interactions)
 
 **5. Scope management & requirement reconciliation**
 The user insisted that the PRD be updated to match what was actually built, not the other way around. This "reconcile the story" instinct — ensuring alignment between planned narrative, engineering reality, and demo delivery — kept the project coherent as the architecture evolved significantly from the original design.
@@ -290,11 +295,14 @@ The user insisted that the PRD be updated to match what was actually built, not 
 - **Rapid prototyping**: Flask skeleton, MJPEG streaming, OpenCV overlays, centroid tracker — all generated and iterated faster than manual coding
 - **Dependency diagnosis**: Tracing `inference` vs `inference-sdk`, NumPy/OpenCV compatibility, conda environment leaking — tedious debugging automated
 - **Architecture exploration**: GIL starvation diagnosis, gunicorn+gevent investigation, lazy initialization pattern — multiple approaches evaluated quickly even when the first attempts failed
-- **Cross-file consistency**: Keeping `camera.py`, `dashboard.html`, `dashboard.js`, `style.css`, and `PRD.md` in sync across 9 phases of changes
+- **Cross-file consistency**: Keeping `camera.py`, `dashboard.html`, `dashboard.js`, `style.css`, and `PRD.md` in sync across 10 phases of changes
+- **Compositional fixes**: In Phase 10, combining two existing systems (quadrant memory + atan2 tracker) into OR logic — the AI could rapidly implement the composition once the user identified the gap, because both components were already well-understood from prior phases
 
 ### Key takeaway
 
 The most productive pattern was: **human sets direction and constraints, AI explores the solution space and implements**. When the AI went too far down an engineering path without user validation (e.g., the original intercardinal tracker), it built something technically correct but practically broken. When the user intervened with domain knowledge or live observation, the result was always simpler and more effective. The best outcomes came from short feedback loops — implement, demo, observe, redirect.
+
+A secondary pattern emerged across Phases 9-10: **iterative composition beats upfront design**. The intercardinal warning system went through three architectures (per-drone displacement → quadrant memory → quadrant memory OR atan2 direction). Each iteration was informed by observing the previous version fail in specific ways. The final OR-logic design wasn't something that could have been designed upfront — it required understanding what each subsystem was good at, which only became clear through live testing. This validates the "demo early, iterate fast" approach over trying to get the architecture right on paper first.
 
 ---
 
