@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+videos/*.mp4
+venv/
+.venv/
+.venv-inference/
+*.egg
+.DS_Store

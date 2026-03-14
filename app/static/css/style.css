@@ -1,0 +1,286 @@
+/* Drone Detection Security Center - Dark Theme */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Courier New', 'Consolas', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 20px;
+    background: linear-gradient(180deg, #111118 0%, #0d0d14 100%);
+    border-bottom: 1px solid #1a3a1a;
+}
+
+header h1 {
+    font-size: 16px;
+    letter-spacing: 3px;
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #00ff88;
+}
+
+.status-indicator .dot {
+    width: 8px;
+    height: 8px;
+    background: #00ff88;
+    border-radius: 50%;
+    animation: pulse-dot 2s infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px #00ff88; }
+    50% { opacity: 0.5; box-shadow: 0 0 8px #00ff88; }
+}
+
+/* Summary Bar */
+.summary-bar {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 8px 20px;
+    background: #0d0d14;
+    border-bottom: 1px solid #1a1a2e;
+}
+
+.stat-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 20px;
+    border: 1px solid #1a1a2e;
+    border-radius: 4px;
+    min-width: 140px;
+}
+
+.stat-label {
+    font-size: 10px;
+    color: #666;
+    letter-spacing: 1px;
+}
+
+.stat-value {
+    font-size: 22px;
+    font-weight: bold;
+    color: #00ff88;
+}
+
+.stat-box.alert-active {
+    border-color: #ff3333;
+    background: rgba(255, 0, 0, 0.05);
+}
+
+.stat-box.alert-active .stat-value {
+    color: #ff3333;
+    animation: pulse-text 1s infinite;
+}
+
+@keyframes pulse-text {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Grid Wrapper (holds compass + grid) */
+.grid-wrapper {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+}
+
+/* Feed Grid */
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    height: 100%;
+}
+
+/* Compass Minimap */
+.compass-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 160px;
+    height: 160px;
+    z-index: 10;
+    pointer-events: none;
+    background: rgba(10, 10, 15, 0.85);
+    border: 2px solid #00ccff;
+    border-radius: 50%;
+    padding: 8px;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.9), 0 0 15px rgba(0, 200, 255, 0.3);
+}
+
+.compass-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.compass-tri {
+    fill: #2a2a35;
+    stroke: #3a3a45;
+    stroke-width: 1;
+    transition: fill 0.3s, filter 0.3s;
+}
+
+.compass-tri.active {
+    fill: #ff3333;
+    stroke: #ff6666;
+    filter: drop-shadow(0 0 6px rgba(255, 50, 50, 0.6));
+}
+
+.compass-tri.warning {
+    fill: #ffcc00;
+    stroke: #ffdd44;
+    filter: drop-shadow(0 0 6px rgba(255, 204, 0, 0.6));
+}
+
+.compass-tri.intercardinal {
+    fill: #1e1e28;
+    stroke: #2a2a35;
+}
+
+.compass-x {
+    stroke: #3a3a45;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+}
+
+.compass-center {
+    fill: none;
+    stroke: #2a2a35;
+    stroke-width: 1.5;
+}
+
+.compass-label {
+    fill: #555;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    text-anchor: middle;
+    dominant-baseline: auto;
+    transition: fill 0.3s;
+}
+
+.compass-label.active {
+    fill: #ff6666;
+}
+
+.feed-panel {
+    display: flex;
+    flex-direction: column;
+    background: #0d0d14;
+    border: 1px solid #1a1a2e;
+    border-radius: 4px;
+    overflow: hidden;
+    min-height: 0;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.feed-panel.alert-active {
+    border-color: #ff3333;
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.2), inset 0 0 15px rgba(255, 0, 0, 0.05);
+    animation: panel-glow 2s infinite;
+}
+
+@keyframes panel-glow {
+    0%, 100% { box-shadow: 0 0 15px rgba(255, 0, 0, 0.2), inset 0 0 15px rgba(255, 0, 0, 0.05); }
+    50% { box-shadow: 0 0 25px rgba(255, 0, 0, 0.4), inset 0 0 20px rgba(255, 0, 0, 0.1); }
+}
+
+.feed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid #1a1a2e;
+}
+
+.feed-label {
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: #00ccff;
+}
+
+.feed-count {
+    font-size: 12px;
+    color: #666;
+}
+
+.feed-count.has-drones {
+    color: #ff6600;
+    font-weight: bold;
+}
+
+.feed-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.feed-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.feed-footer {
+    padding: 3px 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid #1a1a2e;
+    min-height: 22px;
+}
+
+.direction-display {
+    display: flex;
+    gap: 10px;
+    font-size: 11px;
+    color: #888;
+    flex-wrap: wrap;
+}
+
+.direction-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    background: rgba(0, 255, 136, 0.1);
+    border: 1px solid rgba(0, 255, 136, 0.2);
+    border-radius: 3px;
+    color: #00ff88;
+    font-size: 10px;
+}
+
+.direction-arrow {
+    font-size: 12px;
+}

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Detection Security Center</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=3">
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>DRONE DETECTION SECURITY CENTER</h1>
+        </div>
+        <div class="header-right">
+            <div class="status-indicator" id="system-status">
+                <span class="dot"></span> SYSTEM ACTIVE
+            </div>
+        </div>
+    </header>
+
+    <div class="summary-bar">
+        <div class="stat-box">
+            <span class="stat-label">ACTIVE DRONES</span>
+            <span class="stat-value" id="total-drones">0</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">TOTAL DETECTED</span>
+            <span class="stat-value" id="total-unique">0</span>
+        </div>
+        <div class="stat-box" id="alert-box">
+            <span class="stat-label">ALERT STATUS</span>
+            <span class="stat-value" id="alert-status">CLEAR</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">FEEDS ONLINE</span>
+            <span class="stat-value" id="feeds-online">4</span>
+        </div>
+    </div>
+
+    <div class="grid-wrapper">
+        <div class="compass-overlay">
+            <svg viewBox="0 0 200 200" class="compass-svg">
+                <!-- North triangle -->
+                <polygon id="compass-north" class="compass-tri" points="100,15 115,70 85,70" />
+                <text x="100" y="10" class="compass-label">N</text>
+                <!-- South triangle -->
+                <polygon id="compass-south" class="compass-tri" points="100,185 115,130 85,130" />
+                <text x="100" y="198" class="compass-label">S</text>
+                <!-- East triangle -->
+                <polygon id="compass-east" class="compass-tri" points="185,100 130,85 130,115" />
+                <text x="195" y="104" class="compass-label">E</text>
+                <!-- West triangle -->
+                <polygon id="compass-west" class="compass-tri" points="15,100 70,85 70,115" />
+                <text x="5" y="104" class="compass-label">W</text>
+                <!-- Intercardinal triangles (NE/SE/SW/NW) -->
+                <polygon id="compass-NE" class="compass-tri intercardinal" points="145,35 130,70 115,55" />
+                <polygon id="compass-SE" class="compass-tri intercardinal" points="145,165 130,130 115,145" />
+                <polygon id="compass-SW" class="compass-tri intercardinal" points="55,165 70,130 85,145" />
+                <polygon id="compass-NW" class="compass-tri intercardinal" points="55,35 70,70 85,55" />
+                <!-- Center X -->
+                <line x1="88" y1="88" x2="112" y2="112" class="compass-x" />
+                <line x1="112" y1="88" x2="88" y2="112" class="compass-x" />
+                <!-- Center circle -->
+                <circle cx="100" cy="100" r="18" class="compass-center" />
+            </svg>
+        </div>
+
+    <div class="grid">
+        <div class="feed-panel" id="panel-north" data-feed="north">
+            <div class="feed-header">
+                <span class="feed-label">NORTH</span>
+                <span class="feed-count" id="count-north">0 drones</span>
+            </div>
+            <div class="feed-container">
+                <img src="/video_feed/north" alt="North Camera Feed">
+            </div>
+            <div class="feed-footer">
+                <div class="direction-display" id="directions-north"></div>
+            </div>
+        </div>
+
+        <div class="feed-panel" id="panel-south" data-feed="south">
+            <div class="feed-header">
+                <span class="feed-label">SOUTH</span>
+                <span class="feed-count" id="count-south">0 drones</span>
+            </div>
+            <div class="feed-container">
+                <img src="/video_feed/south" alt="South Camera Feed">
+            </div>
+            <div class="feed-footer">
+                <div class="direction-display" id="directions-south"></div>
+            </div>
+        </div>
+
+        <div class="feed-panel" id="panel-east" data-feed="east">
+            <div class="feed-header">
+                <span class="feed-label">EAST</span>
+                <span class="feed-count" id="count-east">0 drones</span>
+            </div>
+            <div class="feed-container">
+                <img src="/video_feed/east" alt="East Camera Feed">
+            </div>
+            <div class="feed-footer">
+                <div class="direction-display" id="directions-east"></div>
+            </div>
+        </div>
+
+        <div class="feed-panel" id="panel-west" data-feed="west">
+            <div class="feed-header">
+                <span class="feed-label">WEST</span>
+                <span class="feed-count" id="count-west">0 drones</span>
+            </div>
+            <div class="feed-container">
+                <img src="/video_feed/west" alt="West Camera Feed">
+            </div>
+            <div class="feed-footer">
+                <div class="direction-display" id="directions-west"></div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
