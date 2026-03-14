@@ -10,3 +10,4 @@ venv/
 .venv-inference/
 *.egg
 .DS_Store
+PRD.md
