@@ -8,10 +8,46 @@ const DIRECTION_ARROWS = {
     'Stationary': '•'
 };
 
+const monitorBtn = document.getElementById('start-monitoring-btn');
+
+monitorBtn.addEventListener('click', () => {
+    const isActive = monitorBtn.classList.contains('active');
+    const url = isActive ? '/api/stop_monitoring' : '/api/start_monitoring';
+
+    fetch(url, { method: 'POST' })
+        .then(r => r.json())
+        .then(() => {
+            if (isActive) {
+                setButtonStopped();
+            } else {
+                setButtonActive();
+            }
+        });
+});
+
+function setButtonActive() {
+    monitorBtn.textContent = 'STOP MONITORING';
+    monitorBtn.classList.add('active', 'stop');
+    monitorBtn.disabled = false;
+}
+
+function setButtonStopped() {
+    monitorBtn.textContent = 'START AUTOMATED MONITORING';
+    monitorBtn.classList.remove('active', 'stop');
+    monitorBtn.disabled = false;
+}
+
 function updateDashboard() {
     fetch('/api/stats')
         .then(r => r.json())
         .then(data => {
+            // Sync monitoring button state (handles page refresh)
+            if (data.monitoring_active) {
+                setButtonActive();
+            } else {
+                setButtonStopped();
+            }
+
             // Summary bar
             document.getElementById('total-drones').textContent = data.total_drones;
             document.getElementById('total-unique').textContent = data.total_unique;

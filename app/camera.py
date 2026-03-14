@@ -2,6 +2,7 @@
 
 import threading
 import time
+from collections import deque
 
 import cv2
 import numpy as np
@@ -41,11 +42,13 @@ class CameraFeed:
         self.directions = {}
         self.alert = False
         self.total_unique = 0
+        self.inference_enabled = False
 
         # Quadrant data from workflow (3x3 grid, sectors 1-9)
         self.quadrants = []
         self.swarm_quadrant = None
         self.intercardinal_warnings = []
+        self.quadrant_history = deque(maxlen=200)  # (timestamp, set_of_occupied_quadrants)
 
         # Inference client
         self.client = InferenceHTTPClient(
@@ -115,8 +118,8 @@ class CameraFeed:
                 str(oid): info["direction"] for oid, info in tracked.items()
             }
 
-            # Compute intercardinal blind-spot warnings from horizontal movement
-            self._update_intercardinal_warnings()
+            # Compute intercardinal blind-spot warnings from quadrant transitions
+            self._update_intercardinal_warnings(detections, tracked)
 
             # Draw overlays
             annotated = self._draw_overlays(frame, tracked)
@@ -133,6 +136,8 @@ class CameraFeed:
 
     def _run_inference(self, frame):
         """Run object detection via Roboflow inference."""
+        if not self.inference_enabled:
+            return []
         if not ROBOFLOW_API_KEY or ROBOFLOW_API_KEY == "your_api_key_here":
             return []
         try:
@@ -169,14 +174,22 @@ class CameraFeed:
         return detections
 
     # Maps camera name + horizontal movement to intercardinal direction.
-    # "right" = drone moving left-to-right in frame (toward higher column).
-    # "left" = drone moving right-to-left in frame (toward lower column).
+    # "right" = drone detected in right-edge quadrants (3,6,9).
+    # "left" = drone detected in left-edge quadrants (1,4,7).
     INTERCARDINAL_MAP = {
         "north": {"right": "NE", "left": "NW"},
         "south": {"right": "SW", "left": "SE"},
         "east":  {"right": "SE", "left": "NE"},
         "west":  {"right": "NW", "left": "SW"},
     }
+
+    # Quadrant column groupings for center→edge transition detection
+    QUADRANT_MEMORY_WINDOW = 15.0  # seconds
+    LEFT_EDGE_QUADRANTS = {1, 4, 7}
+    CENTER_QUADRANTS = {2, 5, 8}
+    RIGHT_EDGE_QUADRANTS = {3, 6, 9}
+    RIGHTWARD_DIRS = {"E", "NE", "SE"}
+    LEFTWARD_DIRS = {"W", "NW", "SW"}
 
     def _parse_workflow_result(self, result):
         """Parse workflow result into detection dicts and quadrant data."""
@@ -206,34 +219,69 @@ class CameraFeed:
 
         return detections
 
-    def _update_intercardinal_warnings(self):
-        """Derive intercardinal compass warnings from horizontal quadrant movement.
+    @staticmethod
+    def _centroid_to_quadrant(x, y, img_w=640, img_h=480):
+        """Map a detection centroid (x, y) to a 3x3 grid quadrant (1-9).
 
-        Compares each drone's current quadrant column to the tracker's centroid
-        history to detect horizontal movement across the frame. A drone moving
-        left-to-right or right-to-left indicates it's heading toward a camera
-        blind spot (the gap between two cardinal cameras), which maps to an
-        intercardinal direction (NW/NE/SW/SE) depending on which camera sees it.
+        Layout:  1 (TL) | 2 (TC) | 3 (TR)
+                 4 (ML) | 5 (MC) | 6 (MR)
+                 7 (BL) | 8 (BC) | 9 (BR)
         """
+        col = min(int(x / (img_w / 3)), 2)
+        row = min(int(y / (img_h / 3)), 2)
+        return row * 3 + col + 1
+
+    def _update_intercardinal_warnings(self, detections, tracked):
+        """Derive intercardinal compass warnings from quadrant analysis.
+
+        Two trigger conditions (OR logic):
+        1. Center→edge quadrant transition within the memory window.
+        2. Drone currently in an edge quadrant with atan2 direction pointing
+           toward that edge (e.g., in right-edge quadrant heading E/NE/SE).
+        """
+        now = time.time()
+
+        # Compute current frame's occupied quadrants
+        current_quads = set()
+        for det in detections:
+            q = self._centroid_to_quadrant(det["x"], det["y"])
+            current_quads.add(q)
+
+        # Record in history
+        if current_quads:
+            self.quadrant_history.append((now, current_quads))
+
+        # Prune entries older than the memory window
+        cutoff = now - self.QUADRANT_MEMORY_WINDOW
+        while self.quadrant_history and self.quadrant_history[0][0] < cutoff:
+            self.quadrant_history.popleft()
+
+        # Collect all quadrants seen in recent history
+        recent_quads = set()
+        for _, quads in self.quadrant_history:
+            recent_quads.update(quads)
+
+        # Check for center→edge transition
+        had_center = bool(recent_quads & self.CENTER_QUADRANTS)
         warnings = set()
         mapping = self.INTERCARDINAL_MAP.get(self.name, {})
-        if not mapping:
-            self.intercardinal_warnings = []
-            return
 
-        for oid, info in self.tracker.objects.items():
-            history = self.tracker.histories.get(oid)
-            if not history or len(history) < 3:
-                continue
-            # Compute horizontal displacement from centroid history
-            oldest_x = history[0][0]
-            newest_x = history[-1][0]
-            dx = newest_x - oldest_x
-            # Threshold: at least 30px horizontal movement to trigger warning
-            if dx > 30:
+        if had_center and mapping:
+            if current_quads & self.RIGHT_EDGE_QUADRANTS:
                 warnings.add(mapping["right"])
-            elif dx < -30:
+            if current_quads & self.LEFT_EDGE_QUADRANTS:
                 warnings.add(mapping["left"])
+
+        # OR: drone in edge quadrant with atan2 direction pointing toward that edge
+        if mapping:
+            for obj_id, info in tracked.items():
+                cx, cy = info["centroid"]
+                direction = info["direction"]
+                q = self._centroid_to_quadrant(cx, cy)
+                if q in self.RIGHT_EDGE_QUADRANTS and direction in self.RIGHTWARD_DIRS:
+                    warnings.add(mapping["right"])
+                if q in self.LEFT_EDGE_QUADRANTS and direction in self.LEFTWARD_DIRS:
+                    warnings.add(mapping["left"])
 
         self.intercardinal_warnings = list(warnings)
 
@@ -323,3 +371,24 @@ def start_all_feeds():
         feeds[name] = feed
         feed.start()
         print(f"[*] Started feed: {name} -> {path}")
+
+
+def enable_inference():
+    """Enable inference on all active feeds."""
+    for feed in feeds.values():
+        feed.inference_enabled = True
+        feed.tracker.reset()
+    print("[*] Inference enabled on all feeds")
+
+
+def disable_inference():
+    """Disable inference on all active feeds and reset state."""
+    for feed in feeds.values():
+        feed.inference_enabled = False
+        feed.tracker.reset()
+        feed.drone_count = 0
+        feed.alert = False
+        feed.directions = {}
+        feed.intercardinal_warnings = []
+        feed.quadrant_history.clear()
+    print("[*] Inference disabled on all feeds")

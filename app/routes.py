@@ -41,12 +41,29 @@ def api_stats():
         if stats["alert"]:
             any_alert = True
 
+    monitoring_active = any(feed.inference_enabled for feed in feeds.values())
+
     return jsonify({
         "feeds": all_stats,
         "total_drones": total_drones,
         "total_unique": total_unique,
         "any_alert": any_alert,
+        "monitoring_active": monitoring_active,
     })
+
+
+@main_bp.route("/api/start_monitoring", methods=["POST"])
+def start_monitoring():
+    from .camera import enable_inference
+    enable_inference()
+    return jsonify({"status": "monitoring_started"})
+
+
+@main_bp.route("/api/stop_monitoring", methods=["POST"])
+def stop_monitoring():
+    from .camera import disable_inference
+    disable_inference()
+    return jsonify({"status": "monitoring_stopped"})
 
 
 def _generate_mjpeg(name):

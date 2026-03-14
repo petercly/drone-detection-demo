@@ -204,6 +204,30 @@ Updated PRD.md to reflect actual delivered architecture: hosted API, atan2 direc
 
 ---
 
+## Phase 9: Intercardinal Warning Rework — Quadrant Memory Approach
+
+### Problem
+The Phase 8 per-drone centroid displacement approach wasn't triggering in practice. At 2 FPS with network inference latency (300-800ms), the centroid tracker frequently lost and re-registered drones — resetting their history before accumulating the 3 consecutive frames and 30px displacement needed to fire. After 30+ seconds of video playback with active detections, zero yellow warnings appeared.
+
+### User-Directed Design Pivot
+This was a case where the user's domain intuition outperformed the initial engineering approach. Rather than trying to fix the thresholds or relax the tracker constraints, the user proposed a fundamentally different model: **feed-level quadrant memory**.
+
+The key insight: instead of requiring persistent per-drone tracking (which is fragile at low FPS), maintain a rolling buffer of *which spatial zones had detections* over a time window. If drones were recently in the center of the frame and now appear at the edges, something crossed toward a blind spot — regardless of whether the tracker maintained a consistent ID for it.
+
+The user also explicitly set the design philosophy: **prefer false positives over missed warnings**. A yellow warning is advisory ("something *might* be heading to a blind spot"), not an alert. For a demo, visible responsiveness matters more than precision.
+
+### Implementation
+- **Feed-level quadrant memory**: Each feed maintains a `deque` of `(timestamp, occupied_quadrants)` tuples, pruned to a 10-second rolling window
+- **Local quadrant computation**: Detection centroids mapped to a 3x3 grid (quadrants 1-9) using pixel position on the 640x480 frame — no dependency on Workflow Block outputs being wired
+- **Center→Edge transition trigger**: Warning fires when current frame has edge-column detections (1,4,7 or 3,6,9) AND center-column quadrants (2,5,8) were seen in the last 10 seconds
+- **Camera mapping unchanged**: Right-edge → clockwise intercardinal, left-edge → counter-clockwise intercardinal
+- Removed all per-drone centroid displacement logic and debug logging
+
+### Dashboard Layout Fix
+Swapped East/West panels in the 2x2 grid so West appears bottom-left and East bottom-right, matching compass convention.
+
+---
+
 ## Architecture Evolution Summary
 
 ```
@@ -216,7 +240,7 @@ Port 5000                     Port 8000
 Inference always called       Guard: skip if no API key
 Local inference server        Roboflow hosted serverless API
 Direction via Workflow Block   Direction via client-side atan2
-No blind-spot warnings        Intercardinal yellow warnings
+No blind-spot warnings        Quadrant memory intercardinal warnings
 PROCESS_FPS=5/DISPLAY_FPS=15  PROCESS_FPS=2/DISPLAY_FPS=10
 requirements: inference        requirements: inference-sdk only
   (full ML runtime)             (lightweight HTTP client)
@@ -236,4 +260,63 @@ No compass minimap            SVG compass: 4 cardinal + 4 intercardinal
 
 ---
 
-*Last updated: Phase 8 -- Intercardinal blind-spot warnings implemented, PRD aligned with delivered architecture, initial commit to GitHub*
+## Retrospective: Human-AI Collaboration Dynamics
+
+This project was built as a pair between a domain expert (the user — a defence/security researcher with deep counter-drone knowledge) and an AI engineering partner (Claude Code). Reflecting on the development journey, several patterns emerge about where human direction was essential to unblock or redirect the engineering work.
+
+### Where the human provided critical value
+
+**1. Problem framing & narrative coherence**
+The user started with a PRD before any code existed, grounding the demo in a real operational problem (multi-camera perimeter drone detection) rather than a toy example. The NATO paper reference (Phase 2) gave the demo a narrative arc that pure engineering wouldn't have produced: "showing detection working is step 1; understanding where it fails is the harder, more valuable problem." This framing shaped every subsequent design decision.
+
+**2. Hardware reality checks**
+Claude's initial architecture assumed local inference was viable. The user's knowledge of the demo laptop's limitations (Intel i7-7660U, 2-core, no GPU) drove the pivot to Roboflow's hosted API (Phase 7). Similarly, pushing FPS to 3 and observing black screens (Phase 5/7) was a user-initiated stress test that validated the 2 FPS ceiling — something that couldn't be predicted from code review alone.
+
+**3. The intercardinal warning redesign (Phase 9)**
+This was the clearest example of domain intuition outperforming engineering instinct. Claude built a technically sound per-drone centroid tracker with displacement thresholds. It didn't work in practice — the tracker couldn't maintain identity long enough at 2 FPS with network latency. Rather than asking to tune thresholds or add retries, the user proposed a fundamentally different mental model: "forget tracking individual drones — just remember where detections *were* and where they *are now*." The quadrant memory approach was simpler, more robust, and directly leveraged the Workflow Block's spatial output. The user also set the design philosophy ("prefer false positives over missed warnings") which cut through engineering perfectionism.
+
+**4. UX corrections from live observation**
+Several fixes came from the user watching the actual dashboard and reporting what didn't match their mental model:
+- Compass overlay invisible (CSS grid z-index issue) — spotted visually, not from code review
+- East/West panels in wrong position relative to compass convention — a spatial intuition that no linter would catch
+- Intercardinal warnings not firing after 30 seconds — a timeout the user was willing to wait through, confirming the feature was broken rather than just slow
+- Video corruption from mixed IR/EO codecs — identified from visual artifacts, not error logs
+
+**5. Scope management & requirement reconciliation**
+The user insisted that the PRD be updated to match what was actually built, not the other way around. This "reconcile the story" instinct — ensuring alignment between planned narrative, engineering reality, and demo delivery — kept the project coherent as the architecture evolved significantly from the original design.
+
+### Where the AI provided critical value
+
+- **Rapid prototyping**: Flask skeleton, MJPEG streaming, OpenCV overlays, centroid tracker — all generated and iterated faster than manual coding
+- **Dependency diagnosis**: Tracing `inference` vs `inference-sdk`, NumPy/OpenCV compatibility, conda environment leaking — tedious debugging automated
+- **Architecture exploration**: GIL starvation diagnosis, gunicorn+gevent investigation, lazy initialization pattern — multiple approaches evaluated quickly even when the first attempts failed
+- **Cross-file consistency**: Keeping `camera.py`, `dashboard.html`, `dashboard.js`, `style.css`, and `PRD.md` in sync across 9 phases of changes
+
+### Key takeaway
+
+The most productive pattern was: **human sets direction and constraints, AI explores the solution space and implements**. When the AI went too far down an engineering path without user validation (e.g., the original intercardinal tracker), it built something technically correct but practically broken. When the user intervened with domain knowledge or live observation, the result was always simpler and more effective. The best outcomes came from short feedback loops — implement, demo, observe, redirect.
+
+---
+
+## Phase 10: Intercardinal OR Logic, Pause Button, Video Re-encode
+
+### Intercardinal Warning Reliability Fix
+The Phase 9 center→edge transition trigger still wasn't firing reliably — it required drones to have been seen in center quadrants within the memory window before appearing at the edge. Drones entering from offscreen directly into edge quadrants (common in the demo videos) never triggered warnings.
+
+**Fix**: Added an OR condition using the atan2 direction tracker that already runs per-drone. If a drone is in an edge quadrant AND its computed compass direction points toward that edge (e.g., in right-edge quadrant heading E/NE/SE), it triggers the intercardinal warning — no center-quadrant history required. This leverages both tracking systems together: the quadrant memory catches center→edge transitions, the atan2 tracker catches edge-entry-with-momentum. The OR logic biases toward sensitivity, consistent with the Phase 9 design philosophy of preferring false positives over missed warnings.
+
+### Stop Monitoring Button
+The START button was one-way — once clicked, inference couldn't be stopped without restarting the server. Added a toggle:
+- **Backend**: `disable_inference()` in `camera.py` sets `inference_enabled=False` on all feeds, resets trackers, clears all detection state (counts, directions, alerts, warnings, quadrant history)
+- **Route**: `/api/stop_monitoring` POST endpoint in `routes.py`
+- **Frontend**: Button toggles between "START AUTOMATED MONITORING" (cyan) and "STOP MONITORING" (red), synced from `data.monitoring_active` on each stats poll so page refresh preserves state
+- **CSS**: `.monitoring-btn.stop` style with red background
+
+### Video Re-encode (Output Seeking)
+The Phase 6 re-encode used `-ss` before `-i` (input seeking) for the second-half trim, which caused keyframe misalignment artifacts (visual corruption). Re-encoded all 4 videos with `-ss` **after** `-i` (output seeking) — slower (decodes from start, discards frames before timestamp) but guarantees clean keyframe alignment.
+
+Timestamps: north=1078s, south=1061s, east=1042s, west=1042s.
+
+---
+
+*Last updated: Phase 10 -- Intercardinal OR logic with atan2 direction, stop monitoring button, video re-encode with output seeking*
