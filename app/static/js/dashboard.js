@@ -146,6 +146,16 @@ function updateDashboard() {
         .catch(err => console.error('Stats poll error:', err));
 }
 
+// Mark Event button (non-functional — active learning teaser)
+function markEvent(btn, feed) {
+    btn.textContent = 'EVENT MARKED';
+    btn.classList.add('marked');
+    setTimeout(() => {
+        btn.textContent = 'MARK EVENT';
+        btn.classList.remove('marked');
+    }, 2000);
+}
+
 // Start polling
 setInterval(updateDashboard, POLL_INTERVAL);
 updateDashboard();

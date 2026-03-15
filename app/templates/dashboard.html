@@ -53,6 +53,19 @@
                 <!-- West triangle -->
                 <polygon id="compass-west" class="compass-tri" points="15,100 70,85 70,115" />
                 <text x="5" y="104" class="compass-label">W</text>
+                <!-- FOV radial lines (static field-of-view indicators) -->
+                <!-- North camera FOV -->
+                <line x1="100" y1="70" x2="78" y2="52" class="compass-fov" />
+                <line x1="100" y1="70" x2="122" y2="52" class="compass-fov" />
+                <!-- South camera FOV -->
+                <line x1="100" y1="130" x2="78" y2="148" class="compass-fov" />
+                <line x1="100" y1="130" x2="122" y2="148" class="compass-fov" />
+                <!-- East camera FOV -->
+                <line x1="130" y1="100" x2="148" y2="78" class="compass-fov" />
+                <line x1="130" y1="100" x2="148" y2="122" class="compass-fov" />
+                <!-- West camera FOV -->
+                <line x1="70" y1="100" x2="52" y2="78" class="compass-fov" />
+                <line x1="70" y1="100" x2="52" y2="122" class="compass-fov" />
                 <!-- Intercardinal triangles (NE/SE/SW/NW) -->
                 <polygon id="compass-NE" class="compass-tri intercardinal" points="145,35 130,70 115,55" />
                 <polygon id="compass-SE" class="compass-tri intercardinal" points="145,165 130,130 115,145" />
@@ -71,6 +84,7 @@
             <div class="feed-header">
                 <span class="feed-label">NORTH</span>
                 <span class="feed-count" id="count-north">0 drones</span>
+                <button class="mark-event-btn" onclick="markEvent(this, 'north')">MARK EVENT</button>
             </div>
             <div class="feed-container">
                 <img src="/video_feed/north" alt="North Camera Feed">
@@ -84,6 +98,7 @@
             <div class="feed-header">
                 <span class="feed-label">SOUTH</span>
                 <span class="feed-count" id="count-south">0 drones</span>
+                <button class="mark-event-btn" onclick="markEvent(this, 'south')">MARK EVENT</button>
             </div>
             <div class="feed-container">
                 <img src="/video_feed/south" alt="South Camera Feed">
@@ -97,6 +112,7 @@
             <div class="feed-header">
                 <span class="feed-label">WEST</span>
                 <span class="feed-count" id="count-west">0 drones</span>
+                <button class="mark-event-btn" onclick="markEvent(this, 'west')">MARK EVENT</button>
             </div>
             <div class="feed-container">
                 <img src="/video_feed/west" alt="West Camera Feed">
@@ -110,6 +126,7 @@
             <div class="feed-header">
                 <span class="feed-label">EAST</span>
                 <span class="feed-count" id="count-east">0 drones</span>
+                <button class="mark-event-btn" onclick="markEvent(this, 'east')">MARK EVENT</button>
             </div>
             <div class="feed-container">
                 <img src="/video_feed/east" alt="East Camera Feed">

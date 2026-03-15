@@ -174,8 +174,8 @@ header h1 {
 }
 
 .compass-tri {
-    fill: #2a2a35;
-    stroke: #3a3a45;
+    fill: #1a5a2a;
+    stroke: #2a7a3a;
     stroke-width: 1;
     transition: fill 0.3s, filter 0.3s;
 }
@@ -195,6 +195,12 @@ header h1 {
 .compass-tri.intercardinal {
     fill: #1e1e28;
     stroke: #2a2a35;
+}
+
+.compass-fov {
+    stroke: rgba(255, 255, 255, 0.25);
+    stroke-width: 1;
+    stroke-linecap: round;
 }
 
 .compass-x {
@@ -259,6 +265,28 @@ header h1 {
     font-weight: bold;
     letter-spacing: 2px;
     color: #00ccff;
+}
+
+.mark-event-btn {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+    font-family: inherit;
+    font-size: 10px;
+    padding: 2px 8px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+}
+
+.mark-event-btn:hover {
+    border-color: #00ccff;
+    color: #00ccff;
+}
+
+.mark-event-btn.marked {
+    border-color: #00ff88;
+    color: #00ff88;
 }
 
 .feed-count {

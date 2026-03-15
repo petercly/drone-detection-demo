@@ -147,7 +147,8 @@ class CameraFeed:
                         "count": self.drone_count,
                     })
                 self.directions = {
-                    str(oid): info["direction"] for oid, info in tracked.items()
+                    str(oid): self._screen_to_world_direction(info["direction"])
+                    for oid, info in tracked.items()
                 }
 
                 # Compute intercardinal blind-spot warnings from quadrant transitions
@@ -228,6 +229,34 @@ class CameraFeed:
     RIGHT_EDGE_QUADRANTS = {3, 6, 9}
     RIGHTWARD_DIRS = {"E", "NE", "SE"}
     LEFTWARD_DIRS = {"W", "NW", "SW"}
+
+    # Screen-space to world-space direction mapping per camera.
+    # Cameras face outward; horizontal screen movement maps to world directions.
+    # Vertical screen movement is elevation change, not cardinal direction.
+    SCREEN_TO_WORLD = {
+        "north": {"right": "E", "left": "W"},
+        "south": {"right": "W", "left": "E"},
+        "east":  {"right": "S", "left": "N"},
+        "west":  {"right": "N", "left": "S"},
+    }
+
+    def _screen_to_world_direction(self, screen_dir):
+        """Convert screen-space direction to world-space direction.
+
+        Horizontal screen movement maps to world cardinal directions per camera.
+        Pure vertical movement (N/S on screen) is elevation, mapped to Stationary.
+        """
+        if screen_dir == "Stationary":
+            return "Stationary"
+        mapping = self.SCREEN_TO_WORLD.get(self.name, {})
+        if not mapping:
+            return screen_dir
+        if screen_dir in self.RIGHTWARD_DIRS:
+            return mapping["right"]
+        if screen_dir in self.LEFTWARD_DIRS:
+            return mapping["left"]
+        # Pure vertical (N or S on screen) = elevation change, not lateral
+        return "Stationary"
 
     def _parse_workflow_result(self, result):
         """Parse workflow result into detection dicts and quadrant data."""
@@ -330,7 +359,8 @@ class CameraFeed:
         for obj_id, info in tracked.items():
             cx, cy = info["centroid"]
             cx, cy = int(cx), int(cy)
-            direction = info["direction"]
+            screen_dir = info["direction"]
+            world_dir = self._screen_to_world_direction(screen_dir)
             confidence = info.get("confidence", 0)
 
             # Draw bounding box (estimated from centroid)
@@ -339,27 +369,27 @@ class CameraFeed:
             x2, y2 = cx + half_w, cy + half_h
 
             # Hovering drones get amber color, others green
-            is_hovering = direction == "Stationary"
+            is_hovering = world_dir == "Stationary"
             color = (0, 165, 255) if is_hovering else (0, 255, 0)
 
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
 
-            # ID, direction, and confidence label
-            dir_label = "HOVER" if is_hovering else direction
+            # ID, world-space direction, and confidence label
+            dir_label = "HOVER" if is_hovering else world_dir
             label = f"ID:{obj_id} {dir_label} {confidence:.0%}"
             cv2.putText(
                 annotated, label, (x1, y1 - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
             )
 
-            # Direction arrow or hover indicator
+            # Direction arrow (screen-space) or hover indicator
             if is_hovering:
                 # Concentric circles for hovering drone
                 cv2.circle(annotated, (cx, cy), 20, (0, 165, 255), 1)
                 cv2.circle(annotated, (cx, cy), 30, (0, 165, 255), 1)
             else:
                 arrow_len = 40
-                dx, dy = self._direction_to_vector(direction)
+                dx, dy = self._direction_to_vector(screen_dir)
                 end_x = cx + int(dx * arrow_len)
                 end_y = cy + int(dy * arrow_len)
                 cv2.arrowedLine(
