@@ -69,12 +69,12 @@ body {
 
 .feed-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
     padding: 3px 8px;
     background: rgba(0, 0, 0, 0.3);
     border-bottom: 1px solid #1a1a2e;
-    gap: 6px;
+    gap: 10px;
 }
 
 .feed-label {
