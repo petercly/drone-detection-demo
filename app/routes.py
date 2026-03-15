@@ -5,7 +5,7 @@ import time
 import cv2
 from flask import Blueprint, Response, jsonify, render_template
 
-from .camera import feeds
+from .camera import alert_log, feeds
 from .config import DISPLAY_FPS
 
 main_bp = Blueprint("main", __name__)
@@ -49,6 +49,7 @@ def api_stats():
         "total_unique": total_unique,
         "any_alert": any_alert,
         "monitoring_active": monitoring_active,
+        "alert_log": list(alert_log),
     })
 
 

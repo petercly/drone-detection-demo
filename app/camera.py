@@ -25,6 +25,9 @@ from .tracker import CentroidTracker
 # Global registry of active feeds
 feeds = {}
 
+# Global alert event log
+alert_log = deque(maxlen=50)
+
 
 class CameraFeed:
     """Processes a single video feed with detection and tracking."""
@@ -43,6 +46,10 @@ class CameraFeed:
         self.alert = False
         self.total_unique = 0
         self.inference_enabled = False
+
+        # Alert debouncing
+        self._alert_on_count = 0
+        self._alert_off_count = 0
 
         # Quadrant data from workflow (3x3 grid, sectors 1-9)
         self.quadrants = []
@@ -81,58 +88,89 @@ class CameraFeed:
         }
 
     def _process_loop(self):
-        cap = cv2.VideoCapture(self.video_path)
-        if not cap.isOpened():
-            print(f"[{self.name}] ERROR: Cannot open {self.video_path}")
-            self._set_error_frame()
-            return
-
         frame_interval = 1.0 / PROCESS_FPS
 
         while self.running:
-            loop_start = time.time()
+            cap = cv2.VideoCapture(self.video_path)
+            if not cap.isOpened():
+                print(f"[{self.name}] Cannot open {self.video_path}, retrying in 5s...")
+                self._set_error_frame()
+                time.sleep(5)
+                continue
 
-            ret, frame = cap.read()
-            if not ret:
-                # Loop video
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            while self.running:
+                loop_start = time.time()
+
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    # Loop video
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    self.tracker.reset()
+                    self._alert_on_count = 0
+                    self._alert_off_count = 0
+
+                # Resize for consistent display
+                frame = cv2.resize(frame, (640, 480))
+
+                # Run inference
+                detections = self._run_inference(frame)
+
+                # Update tracker
+                tracked = self.tracker.update(detections)
+
+                # Update stats
+                self.drone_count = len(tracked)
+                self.total_unique = self.tracker.total_unique
+
+                # Debounced alert: require consecutive frames to trigger/clear
+                prev_alert = self.alert
+                if self.drone_count > 0:
+                    self._alert_on_count += 1
+                    self._alert_off_count = 0
+                    if self._alert_on_count >= 3:
+                        self.alert = True
+                else:
+                    self._alert_off_count += 1
+                    self._alert_on_count = 0
+                    if self._alert_off_count >= 5:
+                        self.alert = False
+
+                # Log alert state transitions
+                if self.alert != prev_alert:
+                    alert_log.append({
+                        "time": time.strftime("%H:%M:%S"),
+                        "feed": self.name.upper(),
+                        "event": "DETECTED" if self.alert else "CLEARED",
+                        "count": self.drone_count,
+                    })
+                self.directions = {
+                    str(oid): info["direction"] for oid, info in tracked.items()
+                }
+
+                # Compute intercardinal blind-spot warnings from quadrant transitions
+                self._update_intercardinal_warnings(detections, tracked)
+
+                # Draw overlays
+                annotated = self._draw_overlays(frame, tracked)
+
+                with self.lock:
+                    self.frame = annotated
+
+                # Maintain target FPS and yield to other threads
+                elapsed = time.time() - loop_start
+                sleep_time = max(frame_interval - elapsed, 0.05)
+                time.sleep(sleep_time)
+
+            cap.release()
+
+            # If still running, reconnect after brief pause
+            if self.running:
+                print(f"[{self.name}] Feed ended, reconnecting...")
                 self.tracker.reset()
-
-            # Resize for consistent display
-            frame = cv2.resize(frame, (640, 480))
-
-            # Run inference
-            detections = self._run_inference(frame)
-
-            # Update tracker
-            tracked = self.tracker.update(detections)
-
-            # Update stats
-            self.drone_count = len(tracked)
-            self.alert = self.drone_count > 0
-            self.total_unique = self.tracker.total_unique
-            self.directions = {
-                str(oid): info["direction"] for oid, info in tracked.items()
-            }
-
-            # Compute intercardinal blind-spot warnings from quadrant transitions
-            self._update_intercardinal_warnings(detections, tracked)
-
-            # Draw overlays
-            annotated = self._draw_overlays(frame, tracked)
-
-            with self.lock:
-                self.frame = annotated
-
-            # Maintain target FPS and yield to other threads
-            elapsed = time.time() - loop_start
-            sleep_time = max(frame_interval - elapsed, 0.05)
-            time.sleep(sleep_time)
-
-        cap.release()
+                time.sleep(1)
 
     def _run_inference(self, frame):
         """Run object detection via Roboflow inference."""
@@ -293,24 +331,33 @@ class CameraFeed:
             cx, cy = info["centroid"]
             cx, cy = int(cx), int(cy)
             direction = info["direction"]
+            confidence = info.get("confidence", 0)
 
             # Draw bounding box (estimated from centroid)
             half_w, half_h = 40, 30
             x1, y1 = cx - half_w, cy - half_h
             x2, y2 = cx + half_w, cy + half_h
 
-            # Green box
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Hovering drones get amber color, others green
+            is_hovering = direction == "Stationary"
+            color = (0, 165, 255) if is_hovering else (0, 255, 0)
 
-            # ID and direction label
-            label = f"ID:{obj_id} {direction}"
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+
+            # ID, direction, and confidence label
+            dir_label = "HOVER" if is_hovering else direction
+            label = f"ID:{obj_id} {dir_label} {confidence:.0%}"
             cv2.putText(
                 annotated, label, (x1, y1 - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2,
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2,
             )
 
-            # Direction arrow
-            if direction != "Stationary":
+            # Direction arrow or hover indicator
+            if is_hovering:
+                # Concentric circles for hovering drone
+                cv2.circle(annotated, (cx, cy), 20, (0, 165, 255), 1)
+                cv2.circle(annotated, (cx, cy), 30, (0, 165, 255), 1)
+            else:
                 arrow_len = 40
                 dx, dy = self._direction_to_vector(direction)
                 end_x = cx + int(dx * arrow_len)
@@ -391,4 +438,6 @@ def disable_inference():
         feed.directions = {}
         feed.intercardinal_warnings = []
         feed.quadrant_history.clear()
+        feed._alert_on_count = 0
+        feed._alert_off_count = 0
     print("[*] Inference disabled on all feeds")

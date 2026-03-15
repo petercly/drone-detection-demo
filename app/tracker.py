@@ -43,17 +43,19 @@ class CentroidTracker:
         self.histories = OrderedDict()     # id -> deque of centroids
         self.disappeared = OrderedDict()   # id -> frames since last seen
         self.directions = OrderedDict()    # id -> current direction string
+        self.confidences = OrderedDict()   # id -> latest confidence score
         self.total_unique = 0              # total unique objects ever tracked
 
     def reset(self):
         self.__init__()
 
-    def _register(self, centroid):
+    def _register(self, centroid, confidence=0.0):
         obj_id = self.next_id
         self.objects[obj_id] = centroid
         self.histories[obj_id] = deque([centroid], maxlen=DIRECTION_WINDOW)
         self.disappeared[obj_id] = 0
         self.directions[obj_id] = "Stationary"
+        self.confidences[obj_id] = confidence
         self.next_id += 1
         self.total_unique += 1
         return obj_id
@@ -63,6 +65,7 @@ class CentroidTracker:
         del self.histories[obj_id]
         del self.disappeared[obj_id]
         del self.directions[obj_id]
+        del self.confidences[obj_id]
 
     def _compute_direction(self, obj_id):
         history = self.histories[obj_id]
@@ -84,17 +87,19 @@ class CentroidTracker:
         Returns:
             dict: {object_id: {'centroid': (cx, cy), 'direction': str}}
         """
-        # Compute centroids from detections
+        # Compute centroids and confidences from detections
         input_centroids = []
+        input_confidences = []
         for det in detections:
             cx = det["x"]
             cy = det["y"]
             input_centroids.append((cx, cy))
+            input_confidences.append(det.get("confidence", 0.0))
 
         # No existing objects - register all
         if len(self.objects) == 0:
-            for centroid in input_centroids:
-                self._register(centroid)
+            for centroid, conf in zip(input_centroids, input_confidences):
+                self._register(centroid, conf)
         # No new detections - mark all as disappeared
         elif len(input_centroids) == 0:
             for obj_id in list(self.disappeared.keys()):
@@ -125,6 +130,7 @@ class CentroidTracker:
                 self.histories[obj_id].append(input_centroids[col])
                 self.disappeared[obj_id] = 0
                 self.directions[obj_id] = self._compute_direction(obj_id)
+                self.confidences[obj_id] = input_confidences[col]
 
                 used_rows.add(row)
                 used_cols.add(col)
@@ -141,7 +147,7 @@ class CentroidTracker:
 
             # Register new detections
             for col in unused_cols:
-                self._register(input_centroids[col])
+                self._register(input_centroids[col], input_confidences[col])
 
         # Build result
         result = {}
@@ -149,5 +155,6 @@ class CentroidTracker:
             result[obj_id] = {
                 "centroid": self.objects[obj_id],
                 "direction": self.directions[obj_id],
+                "confidence": self.confidences[obj_id],
             }
         return result

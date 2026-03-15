@@ -5,7 +5,7 @@ const POLL_INTERVAL = 1500; // ms
 const DIRECTION_ARROWS = {
     'N': '↑', 'NE': '↗', 'E': '→', 'SE': '↘',
     'S': '↓', 'SW': '↙', 'W': '←', 'NW': '↖',
-    'Stationary': '•'
+    'Stationary': '◎'
 };
 
 const monitorBtn = document.getElementById('start-monitoring-btn');
@@ -119,12 +119,29 @@ function updateDashboard() {
                 const directions = feedData.directions || {};
                 Object.entries(directions).forEach(([id, dir]) => {
                     const tag = document.createElement('span');
-                    tag.className = 'direction-tag';
+                    const isHover = dir === 'Stationary';
+                    tag.className = isHover ? 'direction-tag hover' : 'direction-tag';
                     const arrow = DIRECTION_ARROWS[dir] || '?';
-                    tag.innerHTML = `<span class="direction-arrow">${arrow}</span> #${id} ${dir}`;
+                    const label = isHover ? 'HOVER' : dir;
+                    tag.innerHTML = `<span class="direction-arrow">${arrow}</span> #${id} ${label}`;
                     dirEl.appendChild(tag);
                 });
             });
+
+            // Alert event log
+            const logEl = document.getElementById('alert-log');
+            if (logEl && data.alert_log) {
+                logEl.innerHTML = '';
+                data.alert_log.forEach(entry => {
+                    const span = document.createElement('span');
+                    const isDetected = entry.event === 'DETECTED';
+                    span.className = isDetected ? 'log-entry detected' : 'log-entry cleared';
+                    span.textContent = `${entry.time} ${entry.feed}: ${entry.event}` +
+                        (isDetected ? ` (${entry.count})` : '');
+                    logEl.appendChild(span);
+                });
+                logEl.scrollLeft = logEl.scrollWidth;
+            }
         })
         .catch(err => console.error('Stats poll error:', err));
 }

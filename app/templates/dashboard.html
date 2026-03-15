@@ -35,6 +35,7 @@
             <span class="stat-label">FEEDS ONLINE</span>
             <span class="stat-value" id="feeds-online">4</span>
         </div>
+        <button id="start-monitoring-btn" class="monitoring-btn">START AUTOMATED MONITORING</button>
     </div>
 
     <div class="grid-wrapper">
@@ -92,19 +93,6 @@
             </div>
         </div>
 
-        <div class="feed-panel" id="panel-east" data-feed="east">
-            <div class="feed-header">
-                <span class="feed-label">EAST</span>
-                <span class="feed-count" id="count-east">0 drones</span>
-            </div>
-            <div class="feed-container">
-                <img src="/video_feed/east" alt="East Camera Feed">
-            </div>
-            <div class="feed-footer">
-                <div class="direction-display" id="directions-east"></div>
-            </div>
-        </div>
-
         <div class="feed-panel" id="panel-west" data-feed="west">
             <div class="feed-header">
                 <span class="feed-label">WEST</span>
@@ -117,7 +105,25 @@
                 <div class="direction-display" id="directions-west"></div>
             </div>
         </div>
+
+        <div class="feed-panel" id="panel-east" data-feed="east">
+            <div class="feed-header">
+                <span class="feed-label">EAST</span>
+                <span class="feed-count" id="count-east">0 drones</span>
+            </div>
+            <div class="feed-container">
+                <img src="/video_feed/east" alt="East Camera Feed">
+            </div>
+            <div class="feed-footer">
+                <div class="direction-display" id="directions-east"></div>
+            </div>
+        </div>
     </div>
+    </div>
+
+    <div class="alert-log-bar">
+        <span class="alert-log-label">EVENT LOG</span>
+        <div class="alert-log-entries" id="alert-log"></div>
     </div>
 
     <script src="/static/js/dashboard.js"></script>
