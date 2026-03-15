@@ -8,6 +8,74 @@ A single-process Flask application serving a 4-panel "security operations center
 
 **Layout:** 2×2 CSS grid with feeds arranged geographically (N=top-left, E=top-right, W=bottom-left, S=bottom-right). The compass and controls float as an absolutely-positioned overlay at the grid center, decoupled from feed sizing. Per-feed activity logs render as scrolling strips in the pillarbox areas beside each 4:3 video.
 
+### System Diagram
+
+```mermaid
+graph TB
+    subgraph Browser["Browser (dashboard.html)"]
+        IMG1["&lt;img&gt; /video_feed/north"]
+        IMG2["&lt;img&gt; /video_feed/east"]
+        IMG3["&lt;img&gt; /video_feed/west"]
+        IMG4["&lt;img&gt; /video_feed/south"]
+        JS["dashboard.js<br/>polls /api/stats every 1.5s"]
+        COMPASS["Floating Center Overlay<br/>compass + stats + controls"]
+        LOGS["Per-feed Log Strips<br/>in pillarbox areas"]
+    end
+
+    subgraph Flask["Flask App (single process)"]
+        ROUTES["routes.py<br/>/video_feed, /api/stats<br/>/api/start_monitoring<br/>/api/stop_monitoring"]
+
+        subgraph Threads["4× Daemon Threads"]
+            CF_N["CameraFeed: north"]
+            CF_E["CameraFeed: east"]
+            CF_W["CameraFeed: west"]
+            CF_S["CameraFeed: south"]
+        end
+
+        subgraph Processing["Per-thread Processing Loop"]
+            READ["cv2.VideoCapture.read()"]
+            RESIZE["Resize 640×480"]
+            INFER["Roboflow Inference<br/>(if monitoring enabled)"]
+            TRACK["CentroidTracker.update()<br/>greedy centroid matching<br/>atan2 direction computation"]
+            WARN["Intercardinal Warnings<br/>quadrant memory OR<br/>atan2 + edge position"]
+            DRAW["OpenCV Overlays<br/>bboxes, arrows, labels,<br/>confidence, hover indicator"]
+            STORE["Store annotated frame<br/>(thread-locked)"]
+            LOG["Feed Activity Log<br/>deque(maxlen=100)"]
+        end
+    end
+
+    subgraph Inference["Roboflow Inference Server"]
+        MODEL["RF-DETR Drone Detection<br/>drone-detection-on-eo-ir"]
+        WFB["Custom Workflow Block<br/>(optional: quadrant mapping)"]
+    end
+
+    subgraph Video["Video Sources"]
+        MP4_N["north.mp4"]
+        MP4_E["east.mp4"]
+        MP4_W["west.mp4"]
+        MP4_S["south.mp4"]
+    end
+
+    MP4_N --> CF_N
+    MP4_E --> CF_E
+    MP4_W --> CF_W
+    MP4_S --> CF_S
+
+    CF_N & CF_E & CF_W & CF_S --> READ
+    READ --> RESIZE --> INFER
+    INFER -->|HTTP POST| MODEL
+    MODEL -->|predictions| TRACK
+    TRACK --> WARN --> DRAW --> STORE
+    TRACK --> LOG
+
+    STORE -->|MJPEG stream| ROUTES
+    LOG -->|/api/stats JSON| ROUTES
+
+    ROUTES -->|multipart/x-mixed-replace| IMG1 & IMG2 & IMG3 & IMG4
+    ROUTES -->|JSON| JS
+    JS --> COMPASS & LOGS
+```
+
 **What it demonstrates:** The pipeline from detection → tracking → situational awareness display. The intercardinal compass overlay is the key demo artifact — it answers "which direction is the drone heading relative to the perimeter," which is the operational question a security operator actually cares about.
 
 **What it explicitly is not:** Production-grade. No auth, no persistence, no redundancy, no real RTSP input, no multi-operator support, no alert history, no audit log, no graceful degradation when the inference server is down.
@@ -254,42 +322,32 @@ The 50ms minimum floor ensures cooperative yielding even when inference is fast.
 
 ## 6. Demo Improvements
 
-High-ROI changes within current scope.
+### Implemented
 
-### 6.1 Alert debouncing
-Currently a single frame with a detection (>0.3 confidence) sets `alert=True`, and one frame later with no detection clears it. This creates flickering alerts at model confidence boundaries. Fix: require N consecutive frames (e.g., 3) before triggering, and N consecutive misses before clearing. At 5fps this adds 600ms delay — imperceptible to operators, eliminates most single-frame false positives.
+- **6.1 Alert debouncing** — Requires 3 consecutive frames with detections to trigger (600ms at 5fps) and 5 consecutive frames without to clear (1s). Prevents flickering at model confidence boundaries.
+- **6.2 Confidence display on overlays** — Confidence scores shown on bounding box labels (e.g., `ID:0 HOVER 91%`). Surfaces when the model is struggling.
+- **6.3 Per-feed activity logs** — Scrolling log strips in the pillarbox areas beside each video feed. Each feed maintains a `deque(maxlen=100)` of timestamped events. Logs update every 1.5s during active alerts, persist across stop/start cycles, auto-scroll to newest entry. Positioned at left edge for N/W feeds, right edge for E/S feeds.
+- **6.5 Feed reconnection on error** — Outer retry loop in `_process_loop` handles video open failures and end-of-file with 5s backoff. Tracker resets on reconnect.
+- **6.7 Hovering drone indicator** — Stationary drones rendered in amber with concentric circles instead of direction arrows, labeled "HOVER".
 
-### 6.2 Confidence display on overlays
-Adding the confidence score to bounding box labels (`ID:3 NE 0.87`) makes the demo feel more production-like and surfaces when the model is struggling.
+### Remaining
 
-### 6.3 Per-feed activity logs ✅ IMPLEMENTED
-Per-feed scrolling activity logs rendered as full-height strips in the pillarbox areas beside each video feed. Each feed maintains a `deque(maxlen=100)` of timestamped events (detection, cleared, direction changes). Logs update every 1.5s during active alerts, persist across monitoring stop/start cycles, and auto-scroll to newest entry. Positioned at the left edge for N/W feeds and right edge for E/S feeds.
-
-### 6.4 Swarm detection visual
-The `swarm_quadrant` from the workflow plugin is computed but never rendered. A distinct visual indicator when multiple drones share a quadrant would be compelling.
-
-### 6.5 Feed reconnection on error
-Currently if `VideoCapture` fails, the feed shows a static error frame and the thread exits. A retry loop would prevent silent failure (essential for real RTSP feeds).
-
-### 6.6 Inference server health check
-If the Docker container isn't running, inference calls fail silently. A startup check with a dashboard warning ("Inference server unreachable") would save demo debugging time.
-
-### 6.7 Hovering drone alert
-A hovering drone is a threat but currently labeled "Stationary" with no directional warnings. A distinct "HOVER" alert state would surface this operationally relevant scenario.
+- **6.4 Swarm detection visual** — The `swarm_quadrant` from the workflow plugin is computed but never rendered. A distinct visual indicator when multiple drones share a quadrant would be compelling.
+- **6.6 Inference server health check** — If the Docker container isn't running, inference calls fail silently. A startup check with a dashboard warning ("Inference server unreachable") would save demo debugging time.
 
 ---
 
 ## 7. Scale Architecture
 
-### 7.1 Framing: What the NATO Paper Tells Us
+### 7.1 Design Philosophy
 
-The NATO paper's headline finding: 60-92% missed detection rates and 65-83% false alarm rates even for SOTA models. The architectural implication: **this system is a human attention-direction tool, not an autonomous detector.** The operator's judgment is the final detection layer. Architecture must preserve operator trust (avoid alert fatigue) while minimizing missed detections that erode credibility.
+Even state-of-the-art drone detection models exhibit high missed detection rates and significant false alarm rates under real-world conditions. The architectural implication: **this system is a human attention-direction tool, not an autonomous detector.** The operator's judgment is the final detection layer. Architecture must preserve operator trust (avoid alert fatigue) while minimizing missed detections that erode credibility.
 
 A system that cries wolf on every cloud has failed, regardless of how clean the code is. A system with 1-second latency that correctly identifies 70% of real drones is better than a 100ms system that fires 5 false alarms per minute.
 
 ### 7.2 Input Layer — Real RTSP Feeds
 
-**Current:** `cv2.VideoCapture("videos/north.mp4")` looping local files.
+**Current:** `cv2.VideoCapture("videos/north.mp4")` looping local files with reconnection on failure (5s backoff).
 
 **Production requires:**
 - Network jitter buffering (`cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)` for latency vs. stability tradeoff)
@@ -297,7 +355,7 @@ A system that cries wolf on every cloud has failed, regardless of how clean the 
 - Frame timestamp preservation (RTSP PTS) — need to know when a frame was captured, not processed
 - Camera metadata (PTZ position, zoom, calibration) for real-world coordinate projection
 
-**Small object problem (paper):** At deployment standoff distances, drones subtend <32x32 pixels — less than 0.4% of a 640x480 frame. Standard YOLO models have documented performance cliffs below this size. Requires either: (a) higher-resolution input with tiled inference (overlapping 640x640 patches, merged NMS), or (b) model fine-tuned for deployment environment. Neither is a software fix — it's a data/model problem the architecture must accommodate.
+**Small object challenge:** At deployment standoff distances, drones can subtend <32x32 pixels — less than 0.4% of a 640x480 frame. Detection models show performance cliffs below this size. Requires either: (a) higher-resolution input with tiled inference (overlapping 640x640 patches, merged NMS), or (b) model fine-tuned for deployment environment. Neither is a software fix — it's a data/model problem the architecture must accommodate.
 
 ### 7.3 Inference Layer — The Throughput Bottleneck
 
@@ -311,26 +369,25 @@ A system that cries wolf on every cloud has failed, regardless of how clean the 
 
 ### 7.4 Tracking Layer — Stateful, Single-Process
 
-**Production problems:**
+**Current:** Greedy centroid tracker with hovering drone detection (amber "HOVER" indicator with concentric circles for stationary drones).
+
+**Production gaps:**
 
 1. **No persistence:** Process restart loses all tracker state (IDs, histories, unique counts). During an active incident, losing tracking continuity is operationally dangerous.
 
-2. **No cross-camera correlation:** Each camera has independent ID counters. Object ID 3 on north and ID 3 on east are different objects. A drone exiting one camera's FOV and entering another's gets a new ID. Production needs persistent cross-camera drone IDs.
+2. **No cross-camera correlation:** Each camera has independent ID counters. Object ID 3 on north and ID 3 on east are different objects. A drone exiting one camera's FOV and entering another's gets a new ID. Production needs persistent cross-camera drone IDs via re-identification embeddings.
 
 3. **Association quality:** Greedy centroid distance fails when drones pass close together (identity switch) or are occluded beyond `MAX_FRAMES_MISSING`. SORT/DeepSORT (Kalman filter + IoU matching + re-ID embeddings) provides dramatically better track continuity and enables cross-camera tracking.
 
-4. **Stationary = threat:** A hovering drone is operationally significant but currently triggers no directional warnings. Production needs "hover alert" as a distinct state.
+### 7.5 Alert Architecture — Managing Alert Fatigue
 
-### 7.5 Alert Architecture — Alert Fatigue is the Real Enemy
+**Current:** Alert debouncing implemented (3 frames on, 5 frames off). Per-feed activity logs with timestamped detection/cleared events and drone direction info. Confidence scores displayed on all overlays.
 
-The paper cites 65-83% false alarm rates. Current architecture propagates every detection to an alert without debouncing, confidence aggregation, or temporal filtering.
+**Production requirements (not yet implemented):**
 
-**Production requirements:**
-
-- **Alert debouncing:** Require N consecutive frames before triggering. N=3 at 5fps = 600ms confirmation delay.
 - **Confidence aggregation:** Track rolling mean confidence; alert only when mean exceeds a higher threshold (e.g., 0.6) rather than the detection threshold (0.3).
 - **Alert severity levels:** A drone heading toward the protected area is categorically more urgent than one heading away. Production needs threat scoring: distance to protected area + heading + speed + confidence + simultaneous detections.
-- **Alert history and audit log:** Every alert must be logged with timestamp, feed, drone ID, confidence, position, direction. Non-negotiable for operational deployment.
+- **Persistent audit log:** Current per-feed logs are in-memory deques. Production needs persistent storage with full detection metadata (drone ID, confidence, position, direction) for post-incident analysis.
 - **Operator acknowledgment:** Unacknowledged alerts have unknown state. Production SOC tooling requires ack/dismiss workflows.
 
 ### 7.6 Multi-Operator & Multi-Site
@@ -344,9 +401,9 @@ The paper cites 65-83% false alarm rates. Current architecture propagates every 
 - **WebRTC:** MJPEG has no inter-frame compression. Over WAN, WebRTC with H.264/VP9 gives 10-50x better bandwidth efficiency with congestion adaptation.
 - **Horizontal scaling:** Requires extracting tracker state to external store (Redis) and making feed workers stateless.
 
-### 7.7 Environmental Robustness — ASQI Framework
+### 7.7 Environmental Robustness
 
-The ASQI "Environmental Robustness" dimension challenges the assumption that a single model and single confidence threshold works across conditions.
+A single model and single confidence threshold does not work reliably across changing conditions.
 
 **The performance cliff problem:** A model calibrated on daytime footage with 0.3 threshold may give 85% detection rate. At dusk, the same threshold may give 30% detection or 5x more false positives. The current architecture has no mechanism to detect or adapt.
 
@@ -355,26 +412,18 @@ The ASQI "Environmental Robustness" dimension challenges the assumption that a s
 - **Model ensemble:** Run two models in parallel (general + condition-specific), alert if either detects. Trades false positive rate for missed detection rate — correct for security, but requires the debouncing layer to prevent fatigue.
 - **Performance monitoring:** Log per-detection confidence distributions. If rolling mean drops significantly, flag "model degradation" to operators.
 
-### 7.8 Hard-to-Detect Score (HDS) Integration
+### 7.8 Detection Difficulty Estimation
 
-The paper's HDS metric predicts detection difficulty from drone size, background clutter, and motion blur. An operational system should compute HDS per frame/quadrant and display it: "Detection confidence in NW quadrant currently reduced due to background complexity." This sets operator expectations and reduces post-incident "why didn't it detect that?" conversations.
+Predicting detection difficulty from drone size, background clutter, and motion blur enables proactive operator communication. An operational system should compute a difficulty score per frame/quadrant and display it: "Detection confidence in NW quadrant currently reduced due to background complexity." This sets operator expectations and reduces post-incident "why didn't it detect that?" conversations.
 
 ### 7.9 Migration Path
 
 | Stage | Changes | Effort |
 |---|---|---|
-| **Demo hardening** | Alert debounce, confidence overlay, health check UI, stats lock | Hours |
-| **Pilot** (1 site, 1 operator) | RTSP input, reconnection, alert history, auth | Days |
-| **Small deployment** (1 site, 4 operators) | WebSocket push, alert ack workflow, RBAC | Weeks |
+| **Demo hardening** | Health check UI, stats lock, swarm visualization | Hours |
+| **Pilot** (1 site, 1 operator) | RTSP input, persistent audit log, auth | Days |
+| **Small deployment** (1 site, 4 operators) | WebSocket push, alert ack workflow, RBAC, threat scoring | Weeks |
 | **Multi-site** (N cameras) | Async inference queue, tracker state in Redis, horizontal scaling | Months |
-| **Production robustness** | Condition-adaptive thresholds, model ensemble, HDS monitoring, cross-camera tracking | Quarters |
+| **Production robustness** | Condition-adaptive thresholds, model ensemble, difficulty estimation, cross-camera tracking | Quarters |
 
 **The single most important architectural decision for production:** Extract tracker state from in-process memory to an external store. Everything else can be layered incrementally. In-process tracker state is the load-bearing wall that cannot be moved without rebuilding the floor above it.
-
----
-
-## Closing Assessment
-
-For a demo, this architecture is well-suited. The processing is real, the tracking is stateful, and the intercardinal compass is a genuinely interesting operational concept.
-
-The NATO paper's findings are a sobering reminder that the hard problem is not the architecture — it's the model performance. A beautifully architected system with 80% missed detection rate is operationally useless. The architecture should be designed to make model limitations **visible** (confidence overlays, detection logs, condition monitoring) rather than to hide them behind clean UI. Operators who understand the system's failure modes can compensate; operators who trust a black box cannot.
