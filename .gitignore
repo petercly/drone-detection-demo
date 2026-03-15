@@ -11,3 +11,5 @@ venv/
 *.egg
 .DS_Store
 PRD.md
+DEMO-DEVELOPMENT-PROCESS.md
+paper-reference.md
