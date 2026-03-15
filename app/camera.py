@@ -51,6 +51,10 @@ class CameraFeed:
         self._alert_on_count = 0
         self._alert_off_count = 0
 
+        # Per-feed activity log
+        self.feed_log = deque(maxlen=100)
+        self._last_log_time = 0
+
         # Quadrant data from workflow (3x3 grid, sectors 1-9)
         self.quadrants = []
         self.swarm_quadrant = None
@@ -85,6 +89,7 @@ class CameraFeed:
             "alert": self.alert,
             "total_unique": self.total_unique,
             "intercardinal_warnings": self.intercardinal_warnings,
+            "feed_log": list(self.feed_log),
         }
 
     def _process_loop(self):
@@ -138,7 +143,13 @@ class CameraFeed:
                     if self._alert_off_count >= 5:
                         self.alert = False
 
-                # Log alert state transitions
+                self.directions = {
+                    str(oid): self._screen_to_world_direction(info["direction"])
+                    for oid, info in tracked.items()
+                }
+
+                # Log alert state transitions + periodic activity
+                now_ts = time.time()
                 if self.alert != prev_alert:
                     alert_log.append({
                         "time": time.strftime("%H:%M:%S"),
@@ -146,10 +157,9 @@ class CameraFeed:
                         "event": "DETECTED" if self.alert else "CLEARED",
                         "count": self.drone_count,
                     })
-                self.directions = {
-                    str(oid): self._screen_to_world_direction(info["direction"])
-                    for oid, info in tracked.items()
-                }
+                    self._log_feed_activity(now_ts, force=True)
+                elif self.alert and now_ts - self._last_log_time >= 1.5:
+                    self._log_feed_activity(now_ts, force=False)
 
                 # Compute intercardinal blind-spot warnings from quadrant transitions
                 self._update_intercardinal_warnings(detections, tracked)
@@ -352,6 +362,25 @@ class CameraFeed:
 
         self.intercardinal_warnings = list(warnings)
 
+    def _log_feed_activity(self, now_ts, force=False):
+        """Log per-feed drone activity for the feed-local event log."""
+        ts = time.strftime("%H:%M:%S")
+        cam = self.name.upper()
+        if not self.alert and force:
+            self.feed_log.append(f"{ts} {cam}: All clear")
+            self._last_log_time = now_ts
+            return
+        if self.drone_count == 0:
+            return
+        for oid, world_dir in self.directions.items():
+            if world_dir == "Stationary":
+                self.feed_log.append(f"{ts} {cam}: Drone #{oid} detected, hover")
+            else:
+                self.feed_log.append(
+                    f"{ts} {cam}: Drone #{oid} detected, moving {world_dir}"
+                )
+        self._last_log_time = now_ts
+
     def _draw_overlays(self, frame, tracked):
         """Draw bounding boxes, direction arrows, and status overlays."""
         annotated = frame.copy()
@@ -470,4 +499,5 @@ def disable_inference():
         feed.quadrant_history.clear()
         feed._alert_on_count = 0
         feed._alert_off_count = 0
+        feed._last_log_time = 0
     print("[*] Inference disabled on all feeds")

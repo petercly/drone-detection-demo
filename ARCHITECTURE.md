@@ -4,7 +4,9 @@
 
 ## 1. System Overview
 
-A single-process Flask application serving a 4-panel "security operations center" dashboard. Four threads each loop a local MP4 file through a Roboflow inference server, track detected objects across frames using centroid distance matching, compute direction of travel from position history, and serve annotated frames as MJPEG streams to a browser. A polling loop fetches aggregate stats every 1.5 seconds to update the sidebar compass and counters.
+A single-process Flask application serving a 4-panel "security operations center" dashboard. Four threads each loop a local MP4 file through a Roboflow inference server, track detected objects across frames using centroid distance matching, compute direction of travel from position history, and serve annotated frames as MJPEG streams to a browser. A polling loop fetches aggregate stats every 1.5 seconds to update the floating center compass overlay and per-feed scrolling activity logs.
+
+**Layout:** 2×2 CSS grid with feeds arranged geographically (N=top-left, E=top-right, W=bottom-left, S=bottom-right). The compass and controls float as an absolutely-positioned overlay at the grid center, decoupled from feed sizing. Per-feed activity logs render as scrolling strips in the pillarbox areas beside each 4:3 video.
 
 **What it demonstrates:** The pipeline from detection → tracking → situational awareness display. The intercardinal compass overlay is the key demo artifact — it answers "which direction is the drone heading relative to the perimeter," which is the operational question a security operator actually cares about.
 
@@ -260,8 +262,8 @@ Currently a single frame with a detection (>0.3 confidence) sets `alert=True`, a
 ### 6.2 Confidence display on overlays
 Adding the confidence score to bounding box labels (`ID:3 NE 0.87`) makes the demo feel more production-like and surfaces when the model is struggling.
 
-### 6.3 Alert history log
-A scrolling text log in the sidebar ("14:32:07 NORTH: Drone detected, heading NE") would demonstrate persistence. A `deque(maxlen=50)` appended on `drone_count` transitions, served via `/api/stats`.
+### 6.3 Per-feed activity logs ✅ IMPLEMENTED
+Per-feed scrolling activity logs rendered as full-height strips in the pillarbox areas beside each video feed. Each feed maintains a `deque(maxlen=100)` of timestamped events (detection, cleared, direction changes). Logs update every 1.5s during active alerts, persist across monitoring stop/start cycles, and auto-scroll to newest entry. Positioned at the left edge for N/W feeds and right edge for E/S feeds.
 
 ### 6.4 Swarm detection visual
 The `swarm_quadrant` from the workflow plugin is computed but never rendered. A distinct visual indicator when multiple drones share a quadrant would be compelling.

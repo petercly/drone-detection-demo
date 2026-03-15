@@ -32,7 +32,7 @@ function setButtonActive() {
 }
 
 function setButtonStopped() {
-    monitorBtn.textContent = 'START AUTOMATED MONITORING';
+    monitorBtn.textContent = 'START MONITORING';
     monitorBtn.classList.remove('active', 'stop');
     monitorBtn.disabled = false;
 }
@@ -48,9 +48,8 @@ function updateDashboard() {
                 setButtonStopped();
             }
 
-            // Summary bar
+            // Center cell stats
             document.getElementById('total-drones').textContent = data.total_drones;
-            document.getElementById('total-unique').textContent = data.total_unique;
 
             const alertBox = document.getElementById('alert-box');
             const alertStatus = document.getElementById('alert-status');
@@ -126,22 +125,29 @@ function updateDashboard() {
                     tag.innerHTML = `<span class="direction-arrow">${arrow}</span> #${id} ${label}`;
                     dirEl.appendChild(tag);
                 });
-            });
 
-            // Alert event log
-            const logEl = document.getElementById('alert-log');
-            if (logEl && data.alert_log) {
-                logEl.innerHTML = '';
-                data.alert_log.forEach(entry => {
-                    const span = document.createElement('span');
-                    const isDetected = entry.event === 'DETECTED';
-                    span.className = isDetected ? 'log-entry detected' : 'log-entry cleared';
-                    span.textContent = `${entry.time} ${entry.feed}: ${entry.event}` +
-                        (isDetected ? ` (${entry.count})` : '');
-                    logEl.appendChild(span);
-                });
-                logEl.scrollLeft = logEl.scrollWidth;
-            }
+                // Per-feed activity log (scrolling strip in pillarbox)
+                const logEl = document.getElementById(`log-${name}`);
+                if (logEl && feedData.feed_log) {
+                    const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 20;
+                    logEl.innerHTML = '';
+                    feedData.feed_log.forEach(entry => {
+                        const div = document.createElement('div');
+                        if (entry.includes('All clear')) {
+                            div.className = 'feed-log-entry cleared';
+                        } else if (entry.includes('detected')) {
+                            div.className = 'feed-log-entry detected';
+                        } else {
+                            div.className = 'feed-log-entry activity';
+                        }
+                        div.textContent = entry;
+                        logEl.appendChild(div);
+                    });
+                    if (wasAtBottom) {
+                        logEl.scrollTop = logEl.scrollHeight;
+                    }
+                }
+            });
         })
         .catch(err => console.error('Stats poll error:', err));
 }
